@@ -528,13 +528,48 @@ body {
 }
 
 /* ---- Responsive ------------------------------------------- */
+
+body {
+    overflow-x: hidden;
+    width: 100%;
+}
+
+.board-outer {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+}
+
+.board {
+    max-width: 100%;
+}
+
 @media (max-width: 480px) {
-    .players-bar  { gap: 6px; }
-    .pcard        { padding: 8px 10px; }
-    .pname        { font-size: 12px; }
-    .pwalls       { font-size: 11px; }
-    .abtn         { padding: 8px 12px; font-size: 12px; }
+    body {
+        padding: 8px 6px 24px;
+        gap: 10px;
+    }
+    .topbar { max-width: 100%; }
+    .players-bar { max-width: 100%; gap: 4px; }
+    .pcard        { padding: 6px 8px; gap: 2px; }
+    .pname        { font-size: 11px; }
+    .pdot         { width: 10px; height: 10px; }
+    .pwalls       { font-size: 10px; padding-left: 18px; }
+    .pturn        { font-size: 9px; padding: 2px 6px; margin-left: 18px; }
+    .board-outer  { padding: 8px; border-radius: 14px; }
+    .action-row   { max-width: 100%; gap: 6px; }
+    .abtn         { padding: 7px 10px; font-size: 11px; }
+    .hint         { font-size: 10px; }
     .lobby-card   { padding: 20px 18px; }
     .lobby-logo   { font-size: 36px; }
     .code-display { font-size: 24px; letter-spacing: 5px; }
+}
+
+@media (max-width: 360px) {
+    body { padding: 4px 4px 16px; gap: 8px; }
+    .board-outer { padding: 6px; }
+    .pcard { padding: 4px 6px; }
+    .abtn { padding: 6px 8px; font-size: 10px; }
 }

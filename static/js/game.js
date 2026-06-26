@@ -5,8 +5,22 @@
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const CELL_SIZE  = 44;   // px — size of one board cell
-const WALL_GAP   = 6;    // px — thickness of the gap between cells (wall slot)
+const MAX_CELL_SIZE = 44;  // px — max cell size on large screens
+const MIN_CELL_SIZE = 20;  // px — min cell size on small phones
+const WALL_GAP     = 6;    // px — thickness of the gap between cells (wall slot)
+
+/**
+ * Calculates cell size that fits the viewport width.
+ * Board width = N * cellSize + (N-1) * WALL_GAP + containerPadding.
+ * Available = viewportWidth - pagePadding (28px total).
+ */
+function getCellSize() {
+    const N = gameState ? gameState.board_size : 5;
+    const cols = N + (N - 1);  // cell cols + gap cols
+    const available = window.innerWidth - 28;  // body padding left+right
+    const cellSize = Math.floor(Math.min(MAX_CELL_SIZE, Math.max(MIN_CELL_SIZE, available / cols)));
+    return cellSize;
+}
 
 // Goal sides per player index — used to draw the colored border on arrival cells
 const GOAL_SIDES = ['bottom', 'top', 'right', 'left'];
@@ -77,10 +91,11 @@ function renderBoard() {
     const N     = gameState.board_size;
     const board = document.getElementById('board');
     const cols  = N + (N - 1);  // cell cols + gap cols
+    const cs    = getCellSize();
 
     // Set CSS grid template
     board.style.gridTemplateColumns = Array.from({ length: cols }, (_, i) =>
-        i % 2 === 0 ? `${CELL_SIZE}px` : `${WALL_GAP}px`
+        i % 2 === 0 ? `${cs}px` : `${WALL_GAP}px`
     ).join(' ');
 
     // Build a fast lookup for placed walls
@@ -114,8 +129,8 @@ function renderBoard() {
             const p = playerAt[`${r},${c}`];
             const pawnHtml = p
                 ? `<div class="player" style="
-                        width:${Math.round(CELL_SIZE * 0.58)}px;
-                        height:${Math.round(CELL_SIZE * 0.58)}px;
+                        width:${Math.round(cs * 0.58)}px;
+                        height:${Math.round(cs * 0.58)}px;
                         background:${p.color};
                         box-shadow:0 3px 0 ${darken(p.color)};">
                         ${p.name[0].toUpperCase()}
@@ -123,7 +138,7 @@ function renderBoard() {
                 : '';
 
             html += `<div class="cell${canMove ? ' can-move' : ''}"
-                          style="width:${CELL_SIZE}px;height:${CELL_SIZE}px;${goalBorder}"
+                          style="width:${cs}px;height:${cs}px;${goalBorder}"
                           onclick="handleCellClick(${r},${c})">
                        ${pawnHtml}
                      </div>`;
@@ -136,10 +151,10 @@ function renderBoard() {
                 const canWall = isMyTurn() && mode === 'wall-v' && hasWallsLeft();
 
                 html += `<div class="gap-v${canWall ? ' can-place' : ''}"
-                               style="width:${WALL_GAP}px;height:${CELL_SIZE}px;"
+                               style="width:${WALL_GAP}px;height:${cs}px;"
                                onclick="handleVWallClick(${r},${c+1})">
                            <div class="wpiece ${placed ? 'placed' : (canWall ? 'preview' : '')}"
-                                style="width:${WALL_GAP - 1}px;height:${CELL_SIZE}px;"></div>
+                                style="width:${WALL_GAP - 1}px;height:${cs}px;"></div>
                          </div>`;
             }
         }
@@ -153,10 +168,10 @@ function renderBoard() {
                 const canWall = isMyTurn() && mode === 'wall-h' && hasWallsLeft();
 
                 html += `<div class="gap-h${canWall ? ' can-place' : ''}"
-                               style="width:${CELL_SIZE}px;height:${WALL_GAP}px;"
+                               style="width:${cs}px;height:${WALL_GAP}px;"
                                onclick="handleHWallClick(${r+1},${c})">
                            <div class="wpiece ${placed ? 'placed' : (canWall ? 'preview' : '')}"
-                                style="height:${WALL_GAP - 1}px;width:${CELL_SIZE}px;"></div>
+                                style="height:${WALL_GAP - 1}px;width:${cs}px;"></div>
                          </div>`;
 
                 // Corner intersection square between two gaps
@@ -459,6 +474,13 @@ socket.on('error', ({ message }) => {
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+
+// Re-render on viewport resize (orientation change, window resize, etc.)
+let resizeTimeout;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(render, 120);
+});
 
 // Determine this client's player index by matching their chosen color
 // against the players array in the initial game state.
