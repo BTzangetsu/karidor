@@ -226,6 +226,34 @@ body {
     border-radius: 2px;
 }
 
+/* ---- Drag-and-drop wall states ---------------------------- */
+
+/* The floating ghost element that follows the cursor */
+.wpiece-ghost {
+    transition: none;
+}
+
+/* Highlight on the gap element under the cursor during drag */
+.gap-h.drag-hover .wpiece,
+.gap-v.drag-hover .wpiece {
+    background: var(--wall-placed);
+    opacity: 0.6;
+}
+
+/* Make the drag source button visually indicate it can be dragged */
+.abtn[onpointerdown] {
+    cursor: grab;
+}
+.abtn[onpointerdown]:active {
+    cursor: grabbing;
+}
+
+/* Prevent text selection during drag */
+body.dragging {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
 /* ---- Player pawn ------------------------------------------ */
 .player {
     position: absolute;

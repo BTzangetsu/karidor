@@ -45,6 +45,16 @@ let myIndex = -1;
 // Current UI mode: 'move' | 'wall-h' | 'wall-v'
 let mode = 'move';
 
+// Drag-and-drop state for wall placement
+let dragState = {
+    active: false,
+    wallType: null,       // 'h' or 'v'
+    startX: 0, startY: 0,
+    ghostEl: null,
+    highlightEl: null,
+    minDistance: 5,
+};
+
 // ── Theme toggle ─────────────────────────────────────────────────────────────
 
 /**
@@ -152,6 +162,7 @@ function renderBoard() {
 
                 html += `<div class="gap-v${canWall ? ' can-place' : ''}"
                                style="width:${WALL_GAP}px;height:${cs}px;"
+                               data-r="${r}" data-c="${c+1}"
                                onclick="handleVWallClick(${r},${c+1})">
                            <div class="wpiece ${placed ? 'placed' : (canWall ? 'preview' : '')}"
                                 style="width:${WALL_GAP - 1}px;height:${cs}px;"></div>
@@ -169,6 +180,7 @@ function renderBoard() {
 
                 html += `<div class="gap-h${canWall ? ' can-place' : ''}"
                                style="width:${cs}px;height:${WALL_GAP}px;"
+                               data-r="${r+1}" data-c="${c}"
                                onclick="handleHWallClick(${r+1},${c})">
                            <div class="wpiece ${placed ? 'placed' : (canWall ? 'preview' : '')}"
                                 style="height:${WALL_GAP - 1}px;width:${cs}px;"></div>
@@ -260,8 +272,8 @@ function renderActionRow() {
     const myTurn = isMyTurn();
     const hints = {
         'move'  : 'clique une case adjacente',
-        'wall-h': 'clique une tranchée horizontale',
-        'wall-v': 'clique une tranchée verticale',
+        'wall-h': 'tire ou clique sur une tranchée horizontale',
+        'wall-v': 'tire ou clique sur une tranchée verticale',
     };
 
     document.getElementById('action-row').innerHTML =
@@ -271,8 +283,12 @@ function renderActionRow() {
                 ? `background:${m.color};box-shadow:0 4px 0 ${m.shadow};border-color:transparent;color:#fff;`
                 : '';
             const disabled = !myTurn ? 'opacity:0.45;pointer-events:none;' : '';
+            const isWall = m.id.startsWith('wall-');
+            const dragAttr = isWall
+                ? ` onpointerdown="startWallDrag(event, '${m.id}')" style="${selStyle}${disabled}touch-action:none;user-select:none;"`
+                : '';
             return `<button class="abtn${sel ? ' sel' : ''}"
-                            style="${selStyle}${disabled}"
+                            ${dragAttr || `style="${selStyle}${disabled}"`}
                             onclick="setMode('${m.id}')">
                       ${m.label}
                     </button>`;
@@ -313,6 +329,160 @@ function handleVWallClick(r, c) {
 function handleHWallClick(r, c) {
     if (!isMyTurn() || mode !== 'wall-h' || !hasWallsLeft()) return;
     socket.emit('play_wall', { r, c, vertical: false });
+}
+
+// ── Drag and Drop ─────────────────────────────────────────────────────────────
+
+/**
+ * Starts a wall drag from the action button.
+ * Creates a floating ghost element and attaches global pointer listeners.
+ * @param {Event} event - pointerdown event
+ * @param {string} modeId - 'wall-h' or 'wall-v'
+ */
+function startWallDrag(event, modeId) {
+    if (!isMyTurn() || !hasWallsLeft()) return;
+
+    const wallType = modeId === 'wall-h' ? 'h' : 'v';
+    const cs = getCellSize();
+
+    dragState.active = true;
+    dragState.wallType = wallType;
+    dragState.startX = event.clientX;
+    dragState.startY = event.clientY;
+
+    // Create floating ghost element
+    dragState.ghostEl = document.createElement('div');
+    dragState.ghostEl.className = 'wpiece wpiece-ghost';
+    dragState.ghostEl.style.position = 'fixed';
+    dragState.ghostEl.style.pointerEvents = 'none';
+    dragState.ghostEl.style.zIndex = '1000';
+    dragState.ghostEl.style.opacity = '0.7';
+    dragState.ghostEl.style.background = 'var(--wall-placed)';
+    dragState.ghostEl.style.borderRadius = '3px';
+
+    if (wallType === 'h') {
+        dragState.ghostEl.style.width = cs + 'px';
+        dragState.ghostEl.style.height = (WALL_GAP - 1) + 'px';
+    } else {
+        dragState.ghostEl.style.width = (WALL_GAP - 1) + 'px';
+        dragState.ghostEl.style.height = cs + 'px';
+    }
+
+    document.body.appendChild(dragState.ghostEl);
+    document.body.classList.add('dragging');
+
+    updateGhostPosition(event.clientX, event.clientY);
+
+    document.addEventListener('pointermove', onDragMove, { capture: true });
+    document.addEventListener('pointerup', onDragEnd, { capture: true });
+    document.addEventListener('pointercancel', onDragEnd, { capture: true });
+
+    event.preventDefault();
+}
+
+/**
+ * Handles pointer movement during a wall drag.
+ * Updates ghost position and highlights the drop target.
+ */
+function onDragMove(event) {
+    if (!dragState.active) return;
+
+    const dx = event.clientX - dragState.startX;
+    const dy = event.clientY - dragState.startY;
+    const moved = Math.sqrt(dx * dx + dy * dy);
+
+    if (moved < dragState.minDistance) return;
+
+    updateGhostPosition(event.clientX, event.clientY);
+
+    // Hide ghost temporarily so elementFromPoint sees through it
+    if (dragState.ghostEl) {
+        dragState.ghostEl.style.display = 'none';
+    }
+
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+
+    if (dragState.ghostEl) {
+        dragState.ghostEl.style.display = 'block';
+    }
+
+    // Clear previous highlight
+    if (dragState.highlightEl) {
+        dragState.highlightEl.classList.remove('drag-hover');
+        dragState.highlightEl = null;
+    }
+
+    // Check if target is a valid gap for this wall type
+    if (target) {
+        const gap = target.closest('.gap-h, .gap-v');
+        if (gap && isValidDropTarget(gap, dragState.wallType)) {
+            dragState.highlightEl = gap;
+            gap.classList.add('drag-hover');
+        }
+    }
+}
+
+/**
+ * Handles pointer release at the end of a wall drag.
+ * Places the wall if dropped on a valid target, cleans up.
+ */
+function onDragEnd(event) {
+    if (!dragState.active) return;
+
+    // Remove global listeners
+    document.removeEventListener('pointermove', onDragMove, { capture: true });
+    document.removeEventListener('pointerup', onDragEnd, { capture: true });
+    document.removeEventListener('pointercancel', onDragEnd, { capture: true });
+
+    // Remove ghost element
+    if (dragState.ghostEl && dragState.ghostEl.parentNode) {
+        dragState.ghostEl.parentNode.removeChild(dragState.ghostEl);
+    }
+
+    // Clear highlight
+    if (dragState.highlightEl) {
+        dragState.highlightEl.classList.remove('drag-hover');
+    }
+
+    document.body.classList.remove('dragging');
+
+    // Check if this was a real drag (not just a click)
+    const dx = event.clientX - dragState.startX;
+    const dy = event.clientY - dragState.startY;
+    const moved = Math.sqrt(dx * dx + dy * dy);
+
+    if (moved >= dragState.minDistance && dragState.highlightEl) {
+        const r = parseInt(dragState.highlightEl.dataset.r, 10);
+        const c = parseInt(dragState.highlightEl.dataset.c, 10);
+        const vertical = dragState.wallType === 'v';
+        socket.emit('play_wall', { r, c, vertical });
+    }
+
+    // Reset drag state
+    dragState.active = false;
+    dragState.wallType = null;
+    dragState.ghostEl = null;
+    dragState.highlightEl = null;
+}
+
+/**
+ * Updates the ghost element position to center on the given coordinates.
+ */
+function updateGhostPosition(x, y) {
+    if (!dragState.ghostEl) return;
+    const ghost = dragState.ghostEl;
+    const rect = ghost.getBoundingClientRect();
+    ghost.style.left = (x - rect.width / 2) + 'px';
+    ghost.style.top = (y - rect.height / 2) + 'px';
+}
+
+/**
+ * Checks if a gap element is a valid drop target for the given wall type.
+ */
+function isValidDropTarget(gap, wallType) {
+    if (wallType === 'h' && gap.classList.contains('gap-h')) return true;
+    if (wallType === 'v' && gap.classList.contains('gap-v')) return true;
+    return false;
 }
 
 // ── Turn / wall helpers ───────────────────────────────────────────────────────
